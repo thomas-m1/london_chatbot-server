@@ -3,6 +3,8 @@
 import os
 import time
 import openai, langchain, pinecone
+# from openai import OpenAI
+
 
 from flask import Flask
 from langchain_community.document_loaders import DirectoryLoader, TextLoader, UnstructuredPDFLoader, OnlinePDFLoader, PyPDFLoader
@@ -10,16 +12,14 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 
 from langchain.embeddings.openai import OpenAIEmbeddings
-# from langchain.vectorstores import Pinecone
-# from langchain_community.vectorstores import Pinecone
 
 from langchain_community.llms import OpenAI
 
-from langchain.chains.question_answering import load_qa_chain
 from langchain.chains import RetrievalQA
 from pinecone import Pinecone, ServerlessSpec
 from langchain.vectorstores import Pinecone as PineconeStore
-
+from langchain.chains.question_answering import load_qa_chain
+from langchain.chains import RetrievalQA
 
 os.environ["OPENAI_API_KEY"] = "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"
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
@@ -89,62 +89,75 @@ if vector_count >1:
 
 
 
-
-
-
-from langchain.chains.question_answering import load_qa_chain
-from langchain.chains import RetrievalQA
-
-
-
-# # set up the llm model to use with our chain/agent
-
-llm = OpenAI(temperature=0, openai_api_key=OPENAI_API_KEY)
-
-
-
-
 # # Helper function to process the response from the QA chain
 # # and isolate result and source docs and page numbers
-
 def parse_response(response):
     print(response['result'])
     print('\n\nSources:')
     for source_name in response["source_documents"]:
         print(source_name.metadata['source'], "page #:", source_name.metadata['page'])
+# from openai import OpenAI
+
+
+def chatbot_response_gpt(findTemp):
+    from openai import OpenAI
+
+    client = OpenAI(
+        #   organization='YOUR_ORG_ID',
+        api_key=os.environ.get(OPENAI_API_KEY),
+
+    )
+
+    completion = client.chat.completions.create(
+    model="gpt-3.5-turbo",
+    messages=[
+        {"role": "system", "content": "you are a virtual assistant"},
+        {"role": "user", "content": f"I want you to give me a rating on a scale of 0.0-1.0... 0.0 being a more severe situation that needs a prompt response, and a 1.0 being a less serious situation and can answer the phrase in a lighthearted manner. I only want the rating and nothing else. here is the phrase: {findTemp}"}
+    ]
+    )
 
 
 
-        # Set up the retriever on the pinecone vectorstore
-# Make sure to set include_metadata = True
 
+    print(completion.choices[0].message.content)
+
+    assistant_reply = completion.choices[0].message
+
+    # Extract the assistant's reply from the response
+    return assistant_reply
+
+# Set up the retriever on the pinecone vectorstore
 retriever = docsearch.as_retriever(include_metadata=True, metadata_key = 'source')
 
 
+findTemp = "hey I just fell and got a small cut on my leg after I tripped. it is not bad. what should I do?"
+
+response_message = chatbot_response_gpt(findTemp)
+adjustedTemp = response_message.content
+newTemp = float(adjustedTemp)
+
+llm = OpenAI(temperature=newTemp, openai_api_key=OPENAI_API_KEY)
 
 # Set up the RetrievalQA chain with the retriever
-# Make sure to set return_source_documents = True
-
 qa_chain = RetrievalQA.from_chain_type(llm=llm,
                                   chain_type="stuff",
                                   retriever=retriever,
                                   return_source_documents=True)
-# Let's set up the query
 
-query = "List all the street names beginning with the letter a"
-# Call the QA chain to get the response
 
-response = qa_chain(query)
-# print (response)
+
+
+query = "can you List all the street names beginning with the letter a"
+# query1 = "whats 5 x 5?"
+
 
 # parse_response(response)
 print ("*******************************************************")
-print (parse_response(response))
+print (parse_response(qa_chain(query)))
 print ("*******************************************************")
+print (chatbot_response_gpt(findTemp))
+
 # print (response["source_documents"])
-
-
-
 
 
 
