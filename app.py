@@ -6,7 +6,7 @@ import openai, langchain, pinecone
 # from openai import OpenAI
 
 
-from flask import Flask
+from flask import Flask, request, jsonify
 from langchain_community.document_loaders import DirectoryLoader, TextLoader, UnstructuredPDFLoader, OnlinePDFLoader, PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
@@ -42,10 +42,7 @@ documents = loader.load()
 # Set up the RecursiveCharacterTextSplitter, then Split the documents
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 texts = text_splitter.split_documents(documents)
-# print (type(texts))
-# print (len(texts))
-# print (texts[100])
-# print (texts[100].metadata['source'])
+
 
 
 pc = Pinecone(api_key=PINECONE_API_KEY)
@@ -56,8 +53,8 @@ if index_name not in pc.list_indexes().names():
     print("Index does not exist: ", index_name)
     pc.create_index(
         name=index_name,
-        dimension=8,
-        metric="euclidean",
+        dimension=1536,
+        metric="cosine",
         spec=ServerlessSpec(
             cloud='aws',
             region='us-west-2'
@@ -79,7 +76,7 @@ vector_count_str = str(vector_count)
 # index_description = pc.describe_index(index_name)
 
 
-if vector_count >1:
+if vector_count >=0:
     # Prepare the embedding so that we can pass it to the pinecone call in the next step
     embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
     # Create the vector store (new vector store)
@@ -108,17 +105,15 @@ def chatbot_response_gpt(findTemp):
 
     )
 
+    qa_prompt = f"I want you to give me a rating on a scale of 0.0-1.0... 0.0 being a more severe situation that needs a prompt response, and a 1.0 being a less serious situation and can answer the phrase in a lighthearted manner. I only want the rating and nothing else. here is the phrase: {findTemp}"
     completion = client.chat.completions.create(
     model="gpt-3.5-turbo",
     messages=[
         {"role": "system", "content": "you are a virtual assistant"},
-        {"role": "user", "content": f"I want you to give me a rating on a scale of 0.0-1.0... 0.0 being a more severe situation that needs a prompt response, and a 1.0 being a less serious situation and can answer the phrase in a lighthearted manner. I only want the rating and nothing else. here is the phrase: {findTemp}"}
+        {"role": "user", "content": qa_prompt},
+         #f"I want you to give me a rating on a scale of 0.0-1.0... 0.0 being a more severe situation that needs a prompt response, and a 1.0 being a less serious situation and can answer the phrase in a lighthearted manner. I only want the rating and nothing else. here is the phrase: {findTemp}"}
     ]
     )
-
-
-
-
     print(completion.choices[0].message.content)
 
     assistant_reply = completion.choices[0].message
@@ -129,17 +124,21 @@ def chatbot_response_gpt(findTemp):
 # Set up the retriever on the pinecone vectorstore
 retriever = docsearch.as_retriever(include_metadata=True, metadata_key = 'source')
 
+@app.route("/chatbot", methods=['POST'])
 
-findTemp = "hey I just fell and got a small cut on my leg after I tripped. it is not bad. what should I do?"
+def chatbot():
+    
+    data = request.get_json()
+    userFindTemp = data['message']
+    # userFindTemp = "hey I just fell and got a small cut on my leg after I tripped. it is not bad. what should I do?"
+    response_message = chatbot_response_gpt(userFindTemp)
+    adjustedTemp = response_message.content
+    newTemp = float(adjustedTemp)
 
-response_message = chatbot_response_gpt(findTemp)
-adjustedTemp = response_message.content
-newTemp = float(adjustedTemp)
+    llm = OpenAI(temperature=newTemp, openai_api_key=OPENAI_API_KEY)
 
-llm = OpenAI(temperature=newTemp, openai_api_key=OPENAI_API_KEY)
-
-# Set up the RetrievalQA chain with the retriever
-qa_chain = RetrievalQA.from_chain_type(llm=llm,
+    # Set up the RetrievalQA chain with the retriever
+    qa_chain = RetrievalQA.from_chain_type(llm=llm,
                                   chain_type="stuff",
                                   retriever=retriever,
                                   return_source_documents=True)
@@ -147,20 +146,19 @@ qa_chain = RetrievalQA.from_chain_type(llm=llm,
 
 
 
-query = "can you List all the street names beginning with the letter a"
-# query1 = "whats 5 x 5?"
+    # query = "can you List all the street names beginning with the letter a"
+    # query1 = "whats 5 x 5?"
 
 
-# parse_response(response)
-print ("*******************************************************")
-print (parse_response(qa_chain(query)))
-print ("*******************************************************")
-print (chatbot_response_gpt(findTemp))
-
+    # parse_response(response)
+    print ("\n*******************************************************\n")
+    #print (parse_response(qa_chain(query)))
+    print ("\n*******************************************************\n")
+    # print (chatbot_response_gpt(userFindTemp))
+    return jsonify({'reply': chatbot_response_gpt(userFindTemp).content})
 # print (response["source_documents"])
 
-
-
+print("Hello World!")
 
 
 
