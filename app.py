@@ -14,20 +14,33 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from langchain_openai import OpenAIEmbeddings
 
-from langchain_community.llms import OpenAI
-
-# from openai import OpenAI
+#from langchain_community.llms import OpenAI as LangOpenAI
+from langchain.chat_models import ChatOpenAI
+from openai import OpenAI
 from langchain.chains import RetrievalQA
-from langchain.vectorstores import Pinecone as PineconeStore
+# from langchain.vectorstores import Pinecone
 from langchain_pinecone import PineconeVectorStore
 from langchain.chains.question_answering import load_qa_chain
-from langchain.chains import RetrievalQA
-from pinecone import Pinecone as PineconeClient, ServerlessSpec
-from config.pinecone import OPENAI_API_KEY, PINECONE_API_KEY, PINECONE_ENV, PINECONE_INDEX_NAME, PINECONE_NAME_SPACE
+from pinecone import Pinecone as PineconeClient
+#import pinecone
+from pinecone import ServerlessSpec
+#from config.pinecone import OPENAI_API_KEY, PINECONE_ENV, PINECONE_INDEX_NAME, PINECONE_NAME_SPACE, PINECONE_API_KEY
 
 
 app = Flask(__name__)
 
+os.environ["OPENAI_API_KEY"] = "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"
+OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+
+embed_model = "text-embedding-ada-002"
+
+os.environ["PINECONE_API_KEY"] = "2d3e984c-af4c-4b1f-9be2-7e90731a3ce4"
+PINECONE_API_KEY = os.environ['PINECONE_API_KEY']
+
+os.environ["PINECONE_INDEX_NAME"] = "testingindex"
+PINECONE_INDEX_NAME = os.environ['PINECONE_INDEX_NAME']
+
+#PINECONE_API_KEY = "2d3e984c-af4c-4b1f-9be2-7e90731a3ce4"
 # Open the data file and read its content
 def chatbot_vector_store(filePath):
     
@@ -42,14 +55,15 @@ def chatbot_vector_store(filePath):
         print("split docs:", texts)
         print("\n")
         print("creating a vector store...")
-        pc = PineconeClient(api_key=PINECONE_API_KEY)
+        client = PineconeClient(api_key=PINECONE_API_KEY)
     
-        # index_name = "testingindex"
-        index = pc.Index(PINECONE_INDEX_NAME)
+        index_name = "testingindex"
+        
+        my_index = client.Index(PINECONE_INDEX_NAME)
 
-        if PINECONE_INDEX_NAME not in pc.list_indexes().names():
+        if PINECONE_INDEX_NAME not in client.list_indexes().names():
             print("Index does not exist: ", PINECONE_INDEX_NAME)
-            pc.create_index(
+            client.create_index(
                 name=PINECONE_INDEX_NAME,
                 dimension=1536,
                 metric="cosine",
@@ -59,35 +73,29 @@ def chatbot_vector_store(filePath):
                 )
             )
             # wait for index to be initialized
-            while not pc.describe_index(PINECONE_INDEX_NAME).status['ready']:
+            while not client.describe_index(PINECONE_INDEX_NAME).status['ready']:
                 time.sleep(1)
             # # docsearch = Pinecone.from_documents(texts, embeddings, index_name = index_name)
         else:
             print("Index exists: ", PINECONE_INDEX_NAME)
             # docsearch = Pinecone.from_existing_index(index_name, embeddings)
-        index_stats = index.describe_index_stats()
-        print(index_stats)
-        vector_count = index_stats['total_vector_count']
-        print(vector_count)
-        if vector_count >=0:
-            # Prepare the embedding so that we can pass it to the pinecone call in the next step
-            print("Hello world!")
-            embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
-            # Create the vector store (new vector store)
-            # pinecone_index = PineconeVectorStore.get_pinecone_index
-            # print(pinecone_index)
-            vector_db = PineconeVectorStore.from_texts(
-                texts, 
-                embedding=embeddings, 
-                index_name=PINECONE_INDEX_NAME)
-            print("Hello!!")
-            global doc_retriever 
-            doc_retriever = vector_db.as_retriever()
-            
-            # for existing an vector store
-            # docsearch = PineconeStore.from_existing_index(index_name, embeddings)
+            print("Before Vector Store")
+            index_stats = my_index.describe_index_stats()
+            print(index_stats)
+            vector_count = index_stats['total_vector_count']
+            print(vector_count)
+            if vector_count >=0:
+                # Prepare the embedding so that we can pass it to the pinecone call in the next step
+                embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+                # Create the vector store (new vector store)
+                vector_db = PineconeVectorStore.from_documents(texts, embeddings, index_name=PINECONE_INDEX_NAME)
+                
+                global doc_retriever 
+                doc_retriever = vector_db.as_retriever()
+                # for existing an vector store
+                # docsearch = PineconeStore.from_existing_index(index_name, embeddings)
         
-        print("Ingestion Complete.")
+            print("Ingestion Complete.")
     except Exception as e:
         logging.error(traceback.format_exc())
         print("Ingestion Incomplete.")
@@ -114,7 +122,7 @@ def chatbot_get_temp(findTemp):
     
     # print(completion)
     assistant_reply = completion.choices[0].message
-    print("temp : ", assistant_reply)
+    print("temp : ", assistant_reply.content)
     return assistant_reply
 
 # Set up the retriever on the pinecone vectorstore
@@ -132,7 +140,7 @@ def chatbot():
     adjustedTemp = chatbot_get_temp(query).content
     newTemp = float(adjustedTemp)
 
-    llm = OpenAI(temperature=adjustedTemp, 
+    llm = ChatOpenAI(temperature=adjustedTemp, 
                  openai_api_key=OPENAI_API_KEY)
 
     # Set up the RetrievalQA chain with the retriever
@@ -141,14 +149,17 @@ def chatbot():
                                   retriever=doc_retriever,
                                   return_source_documents=True)
 
-    response = qa_chain.run(query)
+    result = qa_chain({"query": query})
+    # result["result"]
+    # response = qa_chain.run(query)
+    # reply = response['result']
+    
     # parse_response(response)
     print ("\n*******************************************************\n")
-    print (parse_response(response))
+    # print (parse_response(response))
     print ("\n*******************************************************\n")
     # print (chatbot_response_gpt(userFindTemp))
-    return jsonify({'reply': response["result"],
-                    'sourcedocs': response["source_documents"]})
+    return jsonify({'reply': result["result"]})
 
 
 if __name__ == '__main__':
