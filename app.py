@@ -3,9 +3,6 @@
 import os
 import time
 import traceback, logging
-# import openai, langchain, pinecone
-
-
 
 from flask import Flask, request, jsonify
 from langchain_community.document_loaders import DirectoryLoader, TextLoader, UnstructuredPDFLoader, OnlinePDFLoader, PyPDFLoader
@@ -14,15 +11,12 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from langchain_openai import OpenAIEmbeddings
 
-#from langchain_community.llms import OpenAI as LangOpenAI
 from langchain.chat_models import ChatOpenAI
 from openai import OpenAI
 from langchain.chains import RetrievalQA
-# from langchain.vectorstores import Pinecone
 from langchain_pinecone import PineconeVectorStore
 from langchain.chains.question_answering import load_qa_chain
 from pinecone import Pinecone as PineconeClient
-#import pinecone
 from pinecone import ServerlessSpec
 #from config.pinecone import OPENAI_API_KEY, PINECONE_ENV, PINECONE_INDEX_NAME, PINECONE_NAME_SPACE, PINECONE_API_KEY
 
@@ -40,7 +34,6 @@ PINECONE_API_KEY = os.environ['PINECONE_API_KEY']
 os.environ["PINECONE_INDEX_NAME"] = "testingindex"
 PINECONE_INDEX_NAME = os.environ['PINECONE_INDEX_NAME']
 
-#PINECONE_API_KEY = "2d3e984c-af4c-4b1f-9be2-7e90731a3ce4"
 # Open the data file and read its content
 def chatbot_vector_store(filePath):
     
@@ -52,7 +45,6 @@ def chatbot_vector_store(filePath):
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         texts = text_splitter.split_documents(documents)
     
-        print("split docs:", texts)
         print("\n")
         print("creating a vector store...")
         client = PineconeClient(api_key=PINECONE_API_KEY)
@@ -75,10 +67,8 @@ def chatbot_vector_store(filePath):
             # wait for index to be initialized
             while not client.describe_index(PINECONE_INDEX_NAME).status['ready']:
                 time.sleep(1)
-            # # docsearch = Pinecone.from_documents(texts, embeddings, index_name = index_name)
         else:
             print("Index exists: ", PINECONE_INDEX_NAME)
-            # docsearch = Pinecone.from_existing_index(index_name, embeddings)
             print("Before Vector Store")
             index_stats = my_index.describe_index_stats()
             print(index_stats)
@@ -92,8 +82,6 @@ def chatbot_vector_store(filePath):
                 
                 global doc_retriever 
                 doc_retriever = vector_db.as_retriever()
-                # for existing an vector store
-                # docsearch = PineconeStore.from_existing_index(index_name, embeddings)
         
             print("Ingestion Complete.")
     except Exception as e:
@@ -150,20 +138,23 @@ def chatbot():
                                   return_source_documents=True)
 
     result = qa_chain({"query": query})
-    # result["result"]
-    # response = qa_chain.run(query)
-    # reply = response['result']
-    
-    # parse_response(response)
+    source_docs = []
+    for doc in result["source_documents"]:
+        content = doc.page_content
+        page_number = doc.metadata['page']
+        source = doc.metadata['source']
+        source_docs.append({
+            'content': content,
+            'doc' : f"Page {page_number}, Source: {source}"
+        })
+    print(result["source_documents"])
     print ("\n*******************************************************\n")
-    # print (parse_response(response))
     print ("\n*******************************************************\n")
-    # print (chatbot_response_gpt(userFindTemp))
-    return jsonify({'reply': result["result"]})
+    return jsonify({'reply': result["result"],
+                    'source_docs': source_docs})
 
 
 if __name__ == '__main__':
-    
     # define file path for pdfs
     myFilePath = './docs'
     chatbot_vector_store(myFilePath)
