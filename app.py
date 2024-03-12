@@ -1,16 +1,14 @@
 # KEYS, MODELS and ENV Related Settings
 
 import os
+from dotenv import load_dotenv
 import time
 import traceback, logging
-
 from flask import Flask, request, jsonify
+
 from langchain_community.document_loaders import DirectoryLoader, TextLoader, UnstructuredPDFLoader, OnlinePDFLoader, PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-
-
 from langchain_openai import OpenAIEmbeddings
-
 from langchain.chat_models import ChatOpenAI
 from openai import OpenAI
 from langchain.chains import RetrievalQA
@@ -18,25 +16,23 @@ from langchain_pinecone import PineconeVectorStore
 from langchain.chains.question_answering import load_qa_chain
 from pinecone import Pinecone as PineconeClient
 from pinecone import ServerlessSpec
-#from config.pinecone import OPENAI_API_KEY, PINECONE_ENV, PINECONE_INDEX_NAME, PINECONE_NAME_SPACE, PINECONE_API_KEY
+from langchain.prompts import PromptTemplate
 
 
 app = Flask(__name__)
 
-os.environ["OPENAI_API_KEY"] = "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"
-OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
-
+load_dotenv()  # take environment variables from .env file
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
+PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME')
 embed_model = "text-embedding-ada-002"
+myFilePath = './docs'
 
-os.environ["PINECONE_API_KEY"] = "2d3e984c-af4c-4b1f-9be2-7e90731a3ce4"
-PINECONE_API_KEY = os.environ['PINECONE_API_KEY']
 
-os.environ["PINECONE_INDEX_NAME"] = "testingindex"
-PINECONE_INDEX_NAME = os.environ['PINECONE_INDEX_NAME']
 
 # Open the data file and read its content
 def chatbot_vector_store(filePath):
-    
+
     try:
         loader = DirectoryLoader(filePath, glob="./*.pdf", loader_cls=PyPDFLoader)
         documents = loader.load()
@@ -44,13 +40,11 @@ def chatbot_vector_store(filePath):
         # Set up the RecursiveCharacterTextSplitter, then Split the documents
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         texts = text_splitter.split_documents(documents)
-    
+
         print("\n")
         print("creating a vector store...")
         client = PineconeClient(api_key=PINECONE_API_KEY)
-    
-        index_name = "testingindex"
-        
+
         my_index = client.Index(PINECONE_INDEX_NAME)
 
         if PINECONE_INDEX_NAME not in client.list_indexes().names():
@@ -79,10 +73,10 @@ def chatbot_vector_store(filePath):
                 embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
                 # Create the vector store (new vector store)
                 vector_db = PineconeVectorStore.from_documents(texts, embeddings, index_name=PINECONE_INDEX_NAME)
-                
-                global doc_retriever 
+
+                global doc_retriever
                 doc_retriever = vector_db.as_retriever()
-        
+
             print("Ingestion Complete.")
     except Exception as e:
         logging.error(traceback.format_exc())
@@ -103,11 +97,11 @@ def chatbot_get_temp(findTemp):
     completion = client.chat.completions.create(
     model="gpt-3.5-turbo",
     messages=[
-        {"role": "system", "content": "you are a virtual assistant"},
+        {"role": "system", "content": "You are a virtual assistant. You will be given a prompt from the user. Your objective is to analyze the prompt to determine what kind of tone you should respond to the user with. you are to give a rating on a scale of 0.0-1.0... 0.0 being a more severe situation that needs a prompt response, and a 1.0 being a less serious situation and can answer the phrase in a lighthearted manner. I only want the rating and nothing else."},
         {"role": "user", "content": qa_prompt},
     ]
     )
-    
+
     # print(completion)
     assistant_reply = completion.choices[0].message
     print("temp : ", assistant_reply.content)
@@ -117,25 +111,36 @@ def chatbot_get_temp(findTemp):
 # retriever = docsearch.as_retriever(include_metadata=True, metadata_key = 'source')
 
 @app.route("/chatbot", methods=['POST'])
-
 def chatbot():
-    
-    doc_retriever 
+
+    doc_retriever
     data = request.get_json()
     query = data['message']
     print("user message: ", query)
-    # userFindTemp = "hey I just fell and got a small cut on my leg after I tripped. it is not bad. what should I do?"
     adjustedTemp = chatbot_get_temp(query).content
-    newTemp = float(adjustedTemp)
+    print("User query temperature: ", adjustedTemp)
 
-    llm = ChatOpenAI(temperature=adjustedTemp, 
+    prompt_template = """Use the following pieces of context to answer the question at the end.
+    If you don't know the answer, just say that you don't know, don't try to make up an answer.
+
+    {context}
+
+    Question: {question}
+    Answer with context:
+    """
+    PROMPT = PromptTemplate(
+        template=prompt_template, input_variables=["context", "question"]
+    )
+    llm = ChatOpenAI(temperature=adjustedTemp,
                  openai_api_key=OPENAI_API_KEY)
 
+    chain_kwargs = {"prompt": PROMPT}
     # Set up the RetrievalQA chain with the retriever
     qa_chain = RetrievalQA.from_chain_type(llm=llm,
                                   chain_type="stuff",
                                   retriever=doc_retriever,
-                                  return_source_documents=True)
+                                  return_source_documents=True,
+                                  chain_type_kwargs=chain_kwargs)
 
     result = qa_chain({"query": query})
     source_docs = []
@@ -147,15 +152,14 @@ def chatbot():
             'content': content,
             'doc' : f"Page {page_number}, Source: {source}"
         })
-    print(result["source_documents"])
-    print ("\n*******************************************************\n")
-    print ("\n*******************************************************\n")
+    # print(result["source_documents"])
+    print ("\n**\n")
+    print ("\n**\n")
     return jsonify({'reply': result["result"],
                     'source_docs': source_docs})
 
 
 if __name__ == '__main__':
-    # define file path for pdfs
-    myFilePath = './docs'
-    chatbot_vector_store(myFilePath)
+    chatbot_vector_store(myFilePath) # Uncomment this if you want to add pdfs to pinecone vector db
+    # terminal_chatbot()
     app.run(debug=True)
