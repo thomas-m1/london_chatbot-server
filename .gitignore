@@ -1,0 +1,9 @@
+# Byte-compiled / optimized python files
+# __pycache__/
+# *.pyc
+# config/
+#.env
+
+
+
+# venv/
