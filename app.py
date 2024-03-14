@@ -36,7 +36,7 @@ def chatbot_get_temp(findTemp):
 
     # print(completion)
     assistant_reply = completion.choices[0].message
-    print("temp : ", assistant_reply.content)
+    # print("temp : ", assistant_reply.content)
     return assistant_reply
 
 
@@ -49,7 +49,7 @@ def chatbot():
     adjustedTemp = chatbot_get_temp(query).content
     print("User query temperature: ", adjustedTemp)
 
-    prompt_template = """Use the following pieces of context to answer the question at the end.
+    prompt_template = """Use the following pieces of context (delimited by <ctx></ctx>) and the chat history (delimited by <hs></hs>)to answer the question at the end.
     If you don't know the answer, just say that you don't know, don't try to make up an answer. 
     If the question is not related to the context or chat history, politely respond that you are tuned to only answer questions that are related to the context.
     ------
@@ -107,6 +107,5 @@ if __name__ == '__main__':
     PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME')
     client = PineconeClient(api_key=PINECONE_API_KEY)
     vector_db = PineconeVectorStore.from_existing_index(PINECONE_INDEX_NAME)
-    doc_retriever = vector_db.as_retriever(search_kwargs={'k': 2})
-    vector_db
+    doc_retriever = vector_db.as_retriever(search_kwargs={'k': 3})
     app.run(debug=True)
