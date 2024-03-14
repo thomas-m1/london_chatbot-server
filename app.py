@@ -17,78 +17,10 @@ from langchain.chains.question_answering import load_qa_chain
 from pinecone import Pinecone as PineconeClient
 from pinecone import ServerlessSpec
 from langchain.prompts import PromptTemplate
+from langchain.memory import ConversationBufferMemory
 
 
 app = Flask(__name__)
-
-load_dotenv()  # take environment variables from .env file
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
-PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME')
-embed_model = "text-embedding-ada-002"
-myFilePath = './docs'
-
-
-
-# Open the data file and read its content
-def chatbot_vector_store(filePath):
-
-    try:
-        loader = DirectoryLoader(filePath, glob="./*.pdf", loader_cls=PyPDFLoader)
-        documents = loader.load()
-
-        # Set up the RecursiveCharacterTextSplitter, then Split the documents
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        texts = text_splitter.split_documents(documents)
-
-        print("\n")
-        print("creating a vector store...")
-        client = PineconeClient(api_key=PINECONE_API_KEY)
-
-        my_index = client.Index(PINECONE_INDEX_NAME)
-
-        if PINECONE_INDEX_NAME not in client.list_indexes().names():
-            print("Index does not exist: ", PINECONE_INDEX_NAME)
-            client.create_index(
-                name=PINECONE_INDEX_NAME,
-                dimension=1536,
-                metric="cosine",
-                spec=ServerlessSpec(
-                    cloud='aws',
-                    region='us-west-2'
-                )
-            )
-            # wait for index to be initialized
-            while not client.describe_index(PINECONE_INDEX_NAME).status['ready']:
-                time.sleep(1)
-        else:
-            print("Index exists: ", PINECONE_INDEX_NAME)
-            print("Before Vector Store")
-            index_stats = my_index.describe_index_stats()
-            print(index_stats)
-            vector_count = index_stats['total_vector_count']
-            print(vector_count)
-            if vector_count >=0:
-                # Prepare the embedding so that we can pass it to the pinecone call in the next step
-                embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
-                # Create the vector store (new vector store)
-                vector_db = PineconeVectorStore.from_documents(texts, embeddings, index_name=PINECONE_INDEX_NAME)
-
-                global doc_retriever
-                doc_retriever = vector_db.as_retriever()
-
-            print("Ingestion Complete.")
-    except Exception as e:
-        logging.error(traceback.format_exc())
-        print("Ingestion Incomplete.")
-
-# # Helper function to process the response from the QA chain
-# # and isolate result and source docs and page numbers
-def parse_response(response):
-    print(response['result'])
-    print('\n\nSources:')
-    for source_name in response["source_documents"]:
-        print(source_name.metadata['source'], "page #:", source_name.metadata['page'])
 
 
 def chatbot_get_temp(findTemp):
@@ -107,13 +39,10 @@ def chatbot_get_temp(findTemp):
     print("temp : ", assistant_reply.content)
     return assistant_reply
 
-# Set up the retriever on the pinecone vectorstore
-# retriever = docsearch.as_retriever(include_metadata=True, metadata_key = 'source')
 
 @app.route("/chatbot", methods=['POST'])
 def chatbot():
-
-    doc_retriever
+    
     data = request.get_json()
     query = data['message']
     print("user message: ", query)
@@ -121,20 +50,32 @@ def chatbot():
     print("User query temperature: ", adjustedTemp)
 
     prompt_template = """Use the following pieces of context to answer the question at the end.
-    If you don't know the answer, just say that you don't know, don't try to make up an answer.
-
+    If you don't know the answer, just say that you don't know, don't try to make up an answer. 
+    If the question is not related to the context or chat history, politely respond that you are tuned to only answer questions that are related to the context.
+    ------
+    <ctx>
     {context}
-
+    </ctx>
+    ------
+    <hs>
+    {history}
+    </hs>
+    ------
     Question: {question}
     Answer with context:
     """
     PROMPT = PromptTemplate(
-        template=prompt_template, input_variables=["context", "question"]
+        template=prompt_template, input_variables=["context", "history", "question"]
     )
     llm = ChatOpenAI(temperature=adjustedTemp,
                  openai_api_key=OPENAI_API_KEY)
 
-    chain_kwargs = {"prompt": PROMPT}
+    chain_kwargs = {"verbose": True, 
+                    "prompt": PROMPT,
+                    "memory": ConversationBufferMemory(
+                        memory_key="history",
+                        input_key="question",
+                    )}
     # Set up the RetrievalQA chain with the retriever
     qa_chain = RetrievalQA.from_chain_type(llm=llm,
                                   chain_type="stuff",
@@ -160,6 +101,12 @@ def chatbot():
 
 
 if __name__ == '__main__':
-    chatbot_vector_store(myFilePath) # Uncomment this if you want to add pdfs to pinecone vector db
-    # terminal_chatbot()
+    load_dotenv()
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
+    PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME')
+    client = PineconeClient(api_key=PINECONE_API_KEY)
+    vector_db = PineconeVectorStore.from_existing_index(PINECONE_INDEX_NAME)
+    doc_retriever = vector_db.as_retriever(search_kwargs={'k': 2})
+    vector_db
     app.run(debug=True)
