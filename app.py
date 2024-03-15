@@ -94,8 +94,8 @@ def chatbot():
             'doc' : f"Page {page_number}, Source: {source}"
         })
     # print(result["source_documents"])
-    print ("\n**\n")
-    print ("\n**\n")
+    print ("\n***************************************\n")
+    print ("\n***************************************\n")
     return jsonify({'reply': result["result"],
                     'source_docs': source_docs})
 
