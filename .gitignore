@@ -3,4 +3,6 @@
 # *.pyc
 # config/
 #.env
-# venv/
+# .venv/
+/.venv
+/.venv

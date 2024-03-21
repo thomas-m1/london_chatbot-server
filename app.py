@@ -19,6 +19,8 @@ from langchain.chains.question_answering import load_qa_chain
 from pinecone import Pinecone as PineconeClient
 from pinecone import ServerlessSpec
 from langchain.prompts import PromptTemplate
+from langchain.memory import ConversationBufferMemory
+
 
 app = Flask(__name__)
 
@@ -106,37 +108,46 @@ def chatbot_get_temp(findTemp):
 
     # print(completion)
     assistant_reply = completion.choices[0].message
-    print("temp : ", assistant_reply.content)
+    # print("temp : ", assistant_reply.content)
     return assistant_reply
 
-# Set up the retriever on the pinecone vectorstore
-# retriever = docsearch.as_retriever(include_metadata=True, metadata_key = 'source')
 
 @app.route("/chatbot", methods=['POST'])
 def chatbot():
 
-    doc_retriever
     data = request.get_json()
     query = data['message']
     print("user message: ", query)
     adjustedTemp = chatbot_get_temp(query).content
     print("User query temperature: ", adjustedTemp)
 
-    prompt_template = """Use the following pieces of context to answer the question at the end.
+    prompt_template = """Use the following pieces of context (delimited by <ctx></ctx>) and the chat history (delimited by <hs></hs>)to answer the question at the end.
     If you don't know the answer, just say that you don't know, don't try to make up an answer.
-
+    If the question is not related to the context or chat history, politely respond that you are tuned to only answer questions that are related to the context.
+    ------
+    <ctx>
     {context}
-
+    </ctx>
+    ------
+    <hs>
+    {history}
+    </hs>
+    ------
     Question: {question}
     Answer with context:
     """
     PROMPT = PromptTemplate(
-        template=prompt_template, input_variables=["context", "question"]
+        template=prompt_template, input_variables=["context", "history", "question"]
     )
     llm = ChatOpenAI(temperature=adjustedTemp,
                  openai_api_key=OPENAI_API_KEY)
 
-    chain_kwargs = {"prompt": PROMPT}
+    chain_kwargs = {"verbose": True,
+                    "prompt": PROMPT,
+                    "memory": ConversationBufferMemory(
+                        memory_key="history",
+                        input_key="question",
+                    )}
     # Set up the RetrievalQA chain with the retriever
     qa_chain = RetrievalQA.from_chain_type(llm=llm,
                                   chain_type="stuff",
@@ -155,8 +166,8 @@ def chatbot():
             'doc' : f"Page {page_number}, Source: {source}"
         })
     # print(result["source_documents"])
-    print ("\n**\n")
-    print ("\n**\n")
+    print ("\n***************************************\n")
+    print ("\n***************************************\n")
     return jsonify({'reply': result["result"],
                     'source_docs': source_docs})
 
@@ -222,6 +233,11 @@ def get_place_details():
 
 
 if __name__ == '__main__':
-    chatbot_vector_store(myFilePath) # Uncomment this if you want to add pdfs to pinecone vector db
-    # terminal_chatbot()
+    load_dotenv()
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
+    PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME')
+    client = PineconeClient(api_key=PINECONE_API_KEY)
+    vector_db = PineconeVectorStore.from_existing_index(PINECONE_INDEX_NAME)
+    doc_retriever = vector_db.as_retriever(search_kwargs={'k': 3})
     app.run(debug=True)
