@@ -206,6 +206,7 @@ if __name__ == '__main__':
     PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME')
     GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
     client = PineconeClient(api_key=PINECONE_API_KEY)
-    vector_db = PineconeVectorStore.from_existing_index(PINECONE_INDEX_NAME)
+    embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+    vector_db = PineconeVectorStore.from_existing_index(PINECONE_INDEX_NAME, embeddings)
     doc_retriever = vector_db.as_retriever(search_kwargs={'k': 3})
     app.run(debug=True)
