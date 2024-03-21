@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 import time
 import traceback, logging
 from flask import Flask, request, jsonify
+import requests
+
 
 from langchain_community.document_loaders import DirectoryLoader, TextLoader, UnstructuredPDFLoader, OnlinePDFLoader, PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -18,13 +20,13 @@ from pinecone import Pinecone as PineconeClient
 from pinecone import ServerlessSpec
 from langchain.prompts import PromptTemplate
 
-
 app = Flask(__name__)
 
-load_dotenv()  # take environment variables from .env file
+load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
 PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME')
+GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
 embed_model = "text-embedding-ada-002"
 myFilePath = './docs'
 
@@ -157,6 +159,66 @@ def chatbot():
     print ("\n**\n")
     return jsonify({'reply': result["result"],
                     'source_docs': source_docs})
+
+
+@app.route("/place-details", methods=['GET'])
+def get_place_details():
+    place_name = request.args.get('place_name')
+    print("******place name: ", place_name)
+    if not place_name:
+        return jsonify({'error': 'Missing place_name parameter'})
+
+    place_name = place_name + " London, Ontario, Canada"
+    # googles autocomplete service (will get the most relevent result to the search)
+    autocomplete_url = f"https://maps.googleapis.com/maps/api/place/autocomplete/json?input={place_name}&key={GOOGLE_PLACES_API_KEY}"
+    autocomplete_response = requests.get(autocomplete_url)
+    autocomplete_data = autocomplete_response.json()
+
+    if autocomplete_data['status'] != 'OK' or len(autocomplete_data['predictions']) == 0:
+        return jsonify({'error': 'No place found with the given name'})
+
+    place_id = autocomplete_data['predictions'][0]['place_id']
+
+    # get place details using the most relevant retrieved place id
+    place_details_url = f"https://maps.googleapis.com/maps/api/place/details/json?place_id={place_id}&key={GOOGLE_PLACES_API_KEY}"
+    place_details_response = requests.get(place_details_url)
+    place_details_data = place_details_response.json()
+
+    if place_details_data['status'] != 'OK':
+        return jsonify({'error': 'Failed to fetch place details'})
+
+    result = {
+        'name': place_details_data['result']['name'],
+        'address': place_details_data['result']['formatted_address'],
+        'phone_number': place_details_data['result'].get('formatted_phone_number', 'N/A'),
+        'website': place_details_data['result'].get('website', 'N/A'),
+        'business_hours': place_details_data['result'].get('opening_hours', {}).get('weekday_text', []),
+        'photos': [photo['photo_reference'] for photo in place_details_data['result'].get('photos', [])],
+        'viewport': place_details_data['result'].get('geometry', {}).get('viewport', {}),
+        'rating': place_details_data['result'].get('rating', 'N/A'),
+        'price_level': place_details_data['result'].get('price_level', 'N/A'),
+        'business_status': place_details_data['result'].get('business_status', 'N/A'),
+        'types': place_details_data['result'].get('types', []),
+        'menu': place_details_data['result'].get('menu', {}).get('url', 'N/A')
+    }
+
+    # if 'reviews' in place_details_data['result']:
+    #     for review in place_details_data['result']['reviews']:
+    #         result['reviews'].append({
+    #             'author_name': review.get('author_name', 'Anonymous'),
+    #             'rating': review.get('rating', 'N/A'),
+    #             'text': review.get('text', 'No review text available')
+    #         })
+
+    return jsonify(result)
+
+
+
+
+
+
+
+
 
 
 if __name__ == '__main__':
