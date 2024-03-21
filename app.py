@@ -1,5 +1,3 @@
-# KEYS, MODELS and ENV Related Settings
-
 import os
 from dotenv import load_dotenv
 import time
@@ -24,75 +22,11 @@ from langchain.memory import ConversationBufferMemory
 
 app = Flask(__name__)
 
-load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
-PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME')
-GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
-embed_model = "text-embedding-ada-002"
-myFilePath = './docs'
-
-
-
-# Open the data file and read its content
-def chatbot_vector_store(filePath):
-
-    try:
-        loader = DirectoryLoader(filePath, glob="./*.pdf", loader_cls=PyPDFLoader)
-        documents = loader.load()
-
-        # Set up the RecursiveCharacterTextSplitter, then Split the documents
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-        texts = text_splitter.split_documents(documents)
-
-        print("\n")
-        print("creating a vector store...")
-        client = PineconeClient(api_key=PINECONE_API_KEY)
-
-        my_index = client.Index(PINECONE_INDEX_NAME)
-
-        if PINECONE_INDEX_NAME not in client.list_indexes().names():
-            print("Index does not exist: ", PINECONE_INDEX_NAME)
-            client.create_index(
-                name=PINECONE_INDEX_NAME,
-                dimension=1536,
-                metric="cosine",
-                spec=ServerlessSpec(
-                    cloud='aws',
-                    region='us-west-2'
-                )
-            )
-            # wait for index to be initialized
-            while not client.describe_index(PINECONE_INDEX_NAME).status['ready']:
-                time.sleep(1)
-        else:
-            print("Index exists: ", PINECONE_INDEX_NAME)
-            print("Before Vector Store")
-            index_stats = my_index.describe_index_stats()
-            print(index_stats)
-            vector_count = index_stats['total_vector_count']
-            print(vector_count)
-            if vector_count >=0:
-                # Prepare the embedding so that we can pass it to the pinecone call in the next step
-                embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
-                # Create the vector store (new vector store)
-                vector_db = PineconeVectorStore.from_documents(texts, embeddings, index_name=PINECONE_INDEX_NAME)
-
-                global doc_retriever
-                doc_retriever = vector_db.as_retriever()
-
-            print("Ingestion Complete.")
-    except Exception as e:
-        logging.error(traceback.format_exc())
-        print("Ingestion Incomplete.")
-
-# # Helper function to process the response from the QA chain
-# # and isolate result and source docs and page numbers
-def parse_response(response):
-    print(response['result'])
-    print('\n\nSources:')
-    for source_name in response["source_documents"]:
-        print(source_name.metadata['source'], "page #:", source_name.metadata['page'])
+# load_dotenv()
+# OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
+# PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME')
+# GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
 
 
 def chatbot_get_temp(findTemp):
@@ -106,11 +40,9 @@ def chatbot_get_temp(findTemp):
     ]
     )
 
-    # print(completion)
     assistant_reply = completion.choices[0].message
     # print("temp : ", assistant_reply.content)
     return assistant_reply
-
 
 @app.route("/chatbot", methods=['POST'])
 def chatbot():
@@ -134,8 +66,43 @@ def chatbot():
     </hs>
     ------
     Question: {question}
-    Answer with context:
+    ------
+
+
+
     """
+
+
+    # INCLUDE EXAMPLES!!!!!
+    ###############This kinda works??????????????
+    # If the response includes a point of interest at the end of the answer, please write a list of the points of interest you suggested. the list should be delimited by "<POI></POI>"
+    # #######################################
+
+    #     If the response includes a point of interest, at the end of the response include the point of interest format the answer delimited by
+    # "<abgfr>
+    # POI:point of interest name 1
+    # POI:point of interest name 2
+    # POI:point of interest name 3
+    # POI:point of interest name 4
+    # etc...
+    # </abgfr>"
+    # in the order that they occur in the answer
+
+
+    # If the response includes a point of interest, at the end of the response include the point of interest format the answer as an HTML table in the order that they occur in the answer
+
+
+    # If the response includes a point of interest, at the end of the response include the point of interest formatted in HTML in the order that they occur in the answer like the following:
+    # <POIUniqueIdentifier>
+    # POI:point of interest name 1
+    # POI:point of interest name 2
+    # POI:point of interest name 3
+    # POI:point of interest name 4
+    # etc...
+    # </POIUniqueIdentifier>
+
+
+
     PROMPT = PromptTemplate(
         template=prompt_template, input_variables=["context", "history", "question"]
     )
@@ -168,6 +135,11 @@ def chatbot():
     # print(result["source_documents"])
     print ("\n***************************************\n")
     print ("\n***************************************\n")
+
+
+    # location = "London, Ontario, Canada"
+    # def get_place_details(suggested_place, location):
+
     return jsonify({'reply': result["result"],
                     'source_docs': source_docs})
 
@@ -180,7 +152,7 @@ def get_place_details():
         return jsonify({'error': 'Missing place_name parameter'})
 
     place_name = place_name + " London, Ontario, Canada"
-    # googles autocomplete service (will get the most relevent result to the search)
+    # googles autocomplete service (will get the most relevant result to the search)
     autocomplete_url = f"https://maps.googleapis.com/maps/api/place/autocomplete/json?input={place_name}&key={GOOGLE_PLACES_API_KEY}"
     autocomplete_response = requests.get(autocomplete_url)
     autocomplete_data = autocomplete_response.json()
@@ -227,16 +199,12 @@ def get_place_details():
 
 
 
-
-
-
-
-
 if __name__ == '__main__':
     load_dotenv()
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
     PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME')
+    GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
     client = PineconeClient(api_key=PINECONE_API_KEY)
     vector_db = PineconeVectorStore.from_existing_index(PINECONE_INDEX_NAME)
     doc_retriever = vector_db.as_retriever(search_kwargs={'k': 3})
