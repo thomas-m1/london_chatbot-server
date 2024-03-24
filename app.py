@@ -2,22 +2,34 @@
 
 import os
 from dotenv import load_dotenv
-import time
-import traceback, logging
 from flask import Flask, request, jsonify
 
 from langchain_community.document_loaders import DirectoryLoader, TextLoader, UnstructuredPDFLoader, OnlinePDFLoader, PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
-from langchain.chat_models import ChatOpenAI
+# from langchain.chat_models import ChatOpenAI
 from openai import OpenAI
 from langchain.chains import RetrievalQA
 from langchain_pinecone import PineconeVectorStore
 from langchain.chains.question_answering import load_qa_chain
 from pinecone import Pinecone as PineconeClient
-from pinecone import ServerlessSpec
-from langchain.prompts import PromptTemplate
-from langchain.memory import ConversationBufferMemory
+# from langchain.prompts import PromptTemplate
+# from langchain.memory import ConversationBufferMemory
+
+
+from langchain.agents import AgentExecutor
+from langchain.agents.format_scratchpad import format_to_openai_functions
+from langchain.agents.output_parsers import OpenAIFunctionsAgentOutputParser
+from langchain.memory import ConversationBufferWindowMemory
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain.schema.runnable import RunnablePassthrough
+from langchain_core.utils.function_calling import convert_to_openai_function
+from langchain_openai.chat_models import ChatOpenAI
+
+from imagegen import countries_image_generator
+# from countriesname import get_countries_by_name
+from kbtool import knowledge_base
+from placestool import get_places_by_name
+
 
 
 app = Flask(__name__)
@@ -49,64 +61,46 @@ def chatbot():
     adjustedTemp = chatbot_get_temp(query).content
     print("User query temperature: ", adjustedTemp)
 
-    prompt_template = """Use the following pieces of context (delimited by <ctx></ctx>) and the chat history (delimited by <hs></hs>)to answer the question at the end.
-    If you don't know the answer, just say that you don't know, don't try to make up an answer. 
-    If the question is not related to the context or chat history, politely respond that you are tuned to only answer questions that are related to the context.
-    ------
-    <ctx>
-    {context}
-    </ctx>
-    ------
-    <hs>
-    {history}
-    </hs>
-    ------
-    Question: {question}
-    Answer with context:
-    """
-    PROMPT = PromptTemplate(
-        template=prompt_template, input_variables=["context", "history", "question"]
-    )
-    llm = ChatOpenAI(temperature=adjustedTemp,
-                 openai_api_key=OPENAI_API_KEY)
+    # creating an agent for testing
 
-    chain_kwargs = {"verbose": True, 
-                    "prompt": PROMPT,
-                    "memory": ConversationBufferMemory(
-                        memory_key="history",
-                        input_key="question",
-                    )}
-    # Set up the RetrievalQA chain with the retriever
-    qa_chain = RetrievalQA.from_chain_type(llm=llm,
-                                  chain_type="stuff",
-                                  retriever=doc_retriever,
-                                  return_source_documents=True,
-                                  chain_type_kwargs=chain_kwargs)
+    tools = [countries_image_generator, get_places_by_name, knowledge_base]
 
-    result = qa_chain({"query": query})
-    source_docs = []
-    for doc in result["source_documents"]:
-        content = doc.page_content
-        page_number = doc.metadata['page']
-        source = doc.metadata['source']
-        source_docs.append({
-            'content': content,
-            'doc' : f"Page {page_number}, Source: {source}"
-        })
-    # print(result["source_documents"])
-    print ("\n***************************************\n")
-    print ("\n***************************************\n")
-    return jsonify({'reply': result["result"],
-                    'source_docs': source_docs})
+    functions = [convert_to_openai_function(f) for f in tools]
+    model = ChatOpenAI(model_name="gpt-3.5-turbo-0125", temperature=adjustedTemp).bind(functions=functions)
+
+    prompt = ChatPromptTemplate.from_messages([("system", "You are a helpful assistant for the City of London. You have access to knowlege base tool which has information related to hospitals, events, businesses, places for London Ontario."
+                                                "If the user has a general query not related to any of the topics give a generic answer based on your knowledege."
+                                                "Use the tools to answer the user query with appropriate context."),
+                                               MessagesPlaceholder(variable_name="chat_history"), ("user", "{input}"),
+                                               MessagesPlaceholder(variable_name="agent_scratchpad")])
+
+    memory = ConversationBufferWindowMemory(return_messages=True, memory_key="chat_history", k=5)
+
+    chain = RunnablePassthrough.assign(agent_scratchpad=lambda x: format_to_openai_functions(x["intermediate_steps"])
+                                      ) | prompt | model | OpenAIFunctionsAgentOutputParser()
+
+    agent_executor = AgentExecutor(agent=chain, tools=tools, memory=memory, verbose=True )
+
+    result = agent_executor({'input': query})
+    print(result)
+    return jsonify({'reply': result['output']})
+    # return result['output']
+
+# while (prompt := input("Enter a query (q to quit): ")) != "q":
+#     result = agent({'input': prompt})
+#     print(result)
+    
+#     return jsonify({'reply': result["result"],
+#                     'source_docs': source_docs})
 
 
 if __name__ == '__main__':
     load_dotenv()
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-    PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
-    PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME')
-    client = PineconeClient(api_key=PINECONE_API_KEY)
-    embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
-    vector_db = PineconeVectorStore.from_existing_index(PINECONE_INDEX_NAME, embeddings)
-    doc_retriever = vector_db.as_retriever(search_kwargs={'k': 3})
+    # PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
+    # PINECONE_INDEX_NAME = os.getenv('PINECONE_INDEX_NAME')
+    # client = PineconeClient(api_key=PINECONE_API_KEY)
+    # embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+    # vector_db = PineconeVectorStore.from_existing_index(PINECONE_INDEX_NAME, embeddings)
+    # doc_retriever = vector_db.as_retriever(search_kwargs={'k': 3})
     app.run(debug=True)
