@@ -1,13 +1,13 @@
 from typing import Optional
 import os
-from dotenv import load_dotenv
 
+from flask import jsonify
 import requests
 from langchain.tools import tool
 from pydantic.v1 import BaseModel, Field, conlist
 from requests import PreparedRequest
 
-load_dotenv()
+
 GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
 
 
@@ -36,9 +36,11 @@ class RequestModel(BaseModel):
 
 
 @tool(args_schema=RequestModel)
-def get_countries_by_name(path_params: PathParams, params: Optional[Params] = None):
+def get_places_by_name(path_params: PathParams, params: Optional[Params] = None):
     """Useful for finding info about a certain place. Input should be a fully formed question."""
     place_name = path_params.name + " London, Ontario, Canada"
+    print(place_name +" >>>___________>place")
+
     autocomplete_base_url = f'https://maps.googleapis.com/maps/api/place/autocomplete/json?input={place_name}&key={GOOGLE_PLACES_API_KEY}'
 
     effective_params = {"fields": ",".join(params.fields)} if params and params.fields else None
@@ -77,8 +79,6 @@ def get_countries_by_name(path_params: PathParams, params: Optional[Params] = No
             'menu': place_details_data['result'].get('menu', {}).get('url', 'N/A')
         }
 
+    print (response)
 
-    # Raise an exception if the request was unsuccessful
-    response.raise_for_status()
-
-    return response.json()
+    return jsonify(response)
