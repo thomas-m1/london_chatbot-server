@@ -40,12 +40,11 @@ def chatbot_get_temp(findTemp):
         {"role": "user", "content": qa_prompt},
     ]
     )
-
-    # print(completion)
+    
     assistant_reply = completion.choices[0].message
-    # print("temp : ", assistant_reply.content)
     return assistant_reply
 
+<<<<<<< Updated upstream
 
 @app.route("/chatbot", methods=['POST'])
 def chatbot():
@@ -58,14 +57,21 @@ def chatbot():
 
     # creating an agent for testing
 
+=======
+def create_agent():
+>>>>>>> Stashed changes
     tools = [countries_image_generator, get_places_by_name, knowledge_base, book_appointment]
 
     functions = [convert_to_openai_function(f) for f in tools]
-    model = ChatOpenAI(model_name="gpt-3.5-turbo-0125", temperature=adjustedTemp).bind(functions=functions)
+    model = ChatOpenAI(model_name="gpt-3.5-turbo-0125", temperature=0).bind(functions=functions)
 
     prompt = ChatPromptTemplate.from_messages([("system", "You are a helpful assistant for the City of London. You have access to knowledge base tool which has information related to hospitals, events, businesses, places for London Ontario."
                                                 "If the user has a general query not related to any of the topics give a generic answer based on your knowledge."
+<<<<<<< Updated upstream
                                                 "if the users query is about any places or events, use the get_places_by_name tool"
+=======
+                                                "If the users query is about any places or events, use the get_places_by_name tool"
+>>>>>>> Stashed changes
                                                 "If the users query asks to book an appointment with a clinic, use the book_appointment tool. The prompt must include both a date and a time. If the user does not provide that information, ask them for it."
                                                 "Use the tools to answer the user query with appropriate context."),
                                                MessagesPlaceholder(variable_name="chat_history"), ("user", "{input}"),
@@ -77,8 +83,25 @@ def chatbot():
                                       ) | prompt | model | OpenAIFunctionsAgentOutputParser()
 
     agent_executor = AgentExecutor(agent=chain, tools=tools, memory=memory, verbose=True )
+    return agent_executor
 
+<<<<<<< Updated upstream
     result = agent_executor({'input': query})
+=======
+
+my_agent = create_agent()
+
+@app.route("/chatbot", methods=['POST'])
+def chatbot():
+
+    data = request.get_json()
+    query = data['message']
+    print("user message: ", query)
+    adjustedTemp = chatbot_get_temp(query).content
+    print("User query temperature: ", adjustedTemp)
+
+    result = my_agent({'input': query})
+>>>>>>> Stashed changes
     print("app.py____________>"+str(result))
     return jsonify({'reply': result['output']})
 
