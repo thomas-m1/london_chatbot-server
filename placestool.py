@@ -79,6 +79,6 @@ def get_places_by_name(path_params: PathParams, params: Optional[Params] = None)
             'menu': place_details_data['result'].get('menu', {}).get('url', 'N/A')
         }
 
-    print (response)
+    print("Placestool_______>" + str(response))
 
     return jsonify(response)
