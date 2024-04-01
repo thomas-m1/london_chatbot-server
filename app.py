@@ -25,6 +25,7 @@ from imagegen import countries_image_generator
 from kbtool import knowledge_base
 from placestool import get_places_by_name
 from bookingTool import book_appointment
+from availibilityTool import check_availability
 
 
 app = Flask(__name__)
@@ -46,7 +47,6 @@ def chatbot_get_temp(findTemp):
     # print("temp : ", assistant_reply.content)
     return assistant_reply
 
-
 @app.route("/chatbot", methods=['POST'])
 def chatbot():
 
@@ -58,7 +58,7 @@ def chatbot():
 
     # creating an agent for testing
 
-    tools = [countries_image_generator, get_places_by_name, knowledge_base, book_appointment]
+    tools = [countries_image_generator, get_places_by_name, knowledge_base, book_appointment, check_availability]
 
     functions = [convert_to_openai_function(f) for f in tools]
     model = ChatOpenAI(model_name="gpt-3.5-turbo-0125", temperature=adjustedTemp).bind(functions=functions)
@@ -66,7 +66,8 @@ def chatbot():
     prompt = ChatPromptTemplate.from_messages([("system", "You are a helpful assistant for the City of London. You have access to knowledge base tool which has information related to hospitals, events, businesses, places for London Ontario."
                                                 "If the user has a general query not related to any of the topics give a generic answer based on your knowledge."
                                                 "if the users query is about any places or events, use the get_places_by_name tool"
-                                                "If the users query asks to book an appointment with a clinic, use the book_appointment tool. The prompt must include both a date and a time. If the user does not provide that information, ask them for it."
+                                                "If the users query asks to book an appointment with a clinic, use the book_appointment tool. The user query must include both a date and a time. If the user does not provide that information, ask them for it."
+                                                "If the user wants to know the available times for a date, provide the json object returned by using the check_availability tool"
                                                 "Use the tools to answer the user query with appropriate context."),
                                                MessagesPlaceholder(variable_name="chat_history"), ("user", "{input}"),
                                                MessagesPlaceholder(variable_name="agent_scratchpad")])
