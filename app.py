@@ -26,6 +26,7 @@ from kbtool import knowledge_base
 from placestool import get_places_by_name
 from bookingTool import book_appointment
 from availibilityTool import check_availability
+import json
 
 
 app = Flask(__name__)
@@ -81,7 +82,22 @@ def chatbot():
 
     result = agent_executor({'input': query})
     print("app.py____________>"+str(result))
-    return jsonify({'reply': result['output']})
+
+    filename = "stored_response.json"  # Replace with the actual filename
+    stored_response = {}
+    try:
+        with open(filename, 'r') as file:
+            stored_response = json.load(file)
+    except FileNotFoundError:
+        pass  # File doesn't exist, ignore and proceed
+
+    # Clear the file
+    with open(filename, 'w') as file:
+        file.truncate(0)
+        # Return both the original response and the stored response
+    combined_response = {'reply': result['output'], 'stored_response': stored_response}
+    return jsonify(combined_response)
+    # return jsonify({'reply': result['output']})
 
 
 if __name__ == '__main__':

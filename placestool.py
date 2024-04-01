@@ -6,6 +6,8 @@ import requests
 from langchain.tools import tool
 from pydantic.v1 import BaseModel, Field, conlist
 from requests import PreparedRequest
+import json
+
 
 
 GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY")
@@ -80,5 +82,10 @@ def get_places_by_name(path_params: PathParams, params: Optional[Params] = None)
         }
 
     print("Placestool_______>" + str(response))
+    # filename = f"{place_name.replace(' ', '_').lower()}_details.json"
+    filename = "stored_response.json"
+      # Write the response to a JSON file
+    with open(filename, 'w') as file:
+        json.dump(response, file)
 
     return jsonify(response)
