@@ -13,7 +13,7 @@ from langchain.schema.runnable import RunnablePassthrough
 from langchain_core.utils.function_calling import convert_to_openai_function
 from langchain_openai.chat_models import ChatOpenAI
 from flask_pymongo import PyMongo
-from pymongo.mongo_client import MongoClient
+from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
 
 
@@ -26,6 +26,19 @@ import json
 
 
 app = Flask(__name__)
+load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+MONGODB_PASSWORD = os.getenv('MONGODB_PASSWORD')
+MONGODB_USERNAME = os.getenv('MONGODB_USERNAME')
+# app.config["SECRET_KEY"] = '2b8525fb812b12a34ecb51a1cebdb30b8cb81ef0'
+
+uri= f"mongodb+srv://{MONGODB_USERNAME}:{MONGODB_PASSWORD}@4470.fe5k7eb.mongodb.net/?retryWrites=true&w=majority&appName=4470"
+
+client = MongoClient(uri)
+db = client['4470']
+user_collection = db['users']
+# mongo = PyMongo(app)
+
 
 
 def chatbot_get_temp(findTemp):
@@ -105,18 +118,18 @@ def register():
     password = request.json.get('password')
     
     
-    if mongo.db.users.find_one({'email': email}):
+    if user_collection.find_one({'email': email}):
         return jsonify(message="User already exists."), 409
     
     # Hash the user's password
     hashed_password = generate_password_hash(password)
     
     # Store the user in MongoDB
-    mongo.db.users.insert_one({
+    user_collection.insert_one({
         'email': email,
         'password': hashed_password
     })
-        
+
     return jsonify({'message': 'Registered successfully'}), 201
 
 @app.route('/login', methods=['POST'])
@@ -126,7 +139,7 @@ def login():
     password = request.json.get('password')
     
     # Find user in the database
-    user = mongo.db.users.find_one({'email': email})
+    user = user_collection.find_one({'email': email})
     
     # Check the password
     if user and check_password_hash(user['password'], password):
@@ -140,13 +153,5 @@ def login():
 if __name__ == '__main__':
     load_dotenv()
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-    MONGODB_PASSWORD = os.getenv('MONGODB_PASSWORD')
-    MONGODB_USERNAME = os.getenv('MONGODB_USERNAME')
-    app.config["MONGO_URI"] = "mongodb+srv://{MONGODB_USERNAME}:{MONGODB_PASSWORD}@4470.fe5k7eb.mongodb.net/?retryWrites=true&w=majority&appName=4470"
-    mongo = PyMongo(app)
-
-    # mongo_client = MongoClient(uri)
-    # db = mongo_client['4470']
-    # appointments_collection = db['appointments']
     
     app.run(debug=True)
