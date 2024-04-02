@@ -21,11 +21,11 @@ from imagegen import countries_image_generator
 from kbtool import knowledge_base
 from placestool import get_places_by_name
 from bookingTool import book_appointment
+from availibilityTool import check_availability
+import json
 
 
 app = Flask(__name__)
-
-
 
 
 def chatbot_get_temp(findTemp):
@@ -43,7 +43,7 @@ def chatbot_get_temp(findTemp):
     return assistant_reply
 
 def create_agent():
-    tools = [countries_image_generator, get_places_by_name, knowledge_base, book_appointment]
+    tools = [countries_image_generator, get_places_by_name, knowledge_base, book_appointment, check_availability]
 
     functions = [convert_to_openai_function(f) for f in tools]
     model = ChatOpenAI(model_name="gpt-3.5-turbo-0125", temperature=0).bind(functions=functions)
@@ -63,6 +63,7 @@ def create_agent():
                                       ) | prompt | model | OpenAIFunctionsAgentOutputParser() 
 
     agent_executor = AgentExecutor(agent=chain, tools=tools, memory=memory, verbose=True )
+
     return agent_executor
 
 
@@ -79,7 +80,22 @@ def chatbot():
 
     result = my_agent({'input': query})
     print("app.py____________>"+str(result))
-    return jsonify({'reply': result['output']})
+    
+    filename = "stored_response.json"  # Replace with the actual filename
+    stored_response = {}
+    try:
+        with open(filename, 'r') as file:
+            stored_response = json.load(file)
+    except FileNotFoundError:
+        pass  # File doesn't exist, ignore and proceed
+
+    # Clear the file
+    with open(filename, 'w') as file:
+        file.truncate(0)
+        # Return both the original response and the stored response
+    combined_response = {'reply': result['output'], 'stored_response': stored_response}
+    return jsonify(combined_response)
+    # return jsonify({'reply': result['output']})
 
 
 @app.route('/register', methods=['POST'])
